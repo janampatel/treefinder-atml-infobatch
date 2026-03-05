@@ -1,9 +1,18 @@
+import json
+import math
+import os
 import numpy as np
 from torch.utils.data import DataLoader
 
 
-def get_dataloader(cfg: dict):
-    """Return train, val, test DataLoaders and the train dataset (possibly InfoBatch-wrapped)."""
+def get_dataloader(cfg: dict, train_fraction_seed: int = None):
+    """Return train, val, test DataLoaders and the train dataset (possibly InfoBatch-wrapped).
+
+    Args:
+        cfg: full config dict
+        train_fraction_seed: seed used to subsample train_fraction from the train split.
+            Defaults to cfg['experiment']['seed'] when None.
+    """
     method = cfg["data"]["split"]["method"]
     if method == "random":
         from .random_split import RandomSplitDataset as DS
@@ -23,14 +32,32 @@ def get_dataloader(cfg: dict):
     # Optionally subsample the training set (val/test are always kept full)
     train_fraction = cfg['data'].get('train_fraction', 1.0)
     if 0.0 < train_fraction < 1.0:
-        import math
         from torch.utils.data import Subset
         n_total = len(train_ds)
         n_keep = max(1, math.floor(n_total * train_fraction))
-        rng = np.random.RandomState(cfg['experiment']['seed'])
+        seed = train_fraction_seed if train_fraction_seed is not None else cfg['experiment']['seed']
+        rng = np.random.RandomState(seed)
         indices = rng.permutation(n_total)[:n_keep].tolist()
         train_ds = Subset(train_ds, indices)
-        print(f"[TrainFraction] Using {n_keep}/{n_total} training samples ({train_fraction*100:.1f}%)")
+        print(f"[TrainFraction] Using {n_keep}/{n_total} training samples ({train_fraction*100:.1f}%), seed={seed}")
+
+        # Save the selected split to disk for reproducibility
+        os.makedirs('splits', exist_ok=True)
+        split_save_path = os.path.join('splits', f'trainfrac_{train_fraction:.2f}_seed{seed}.json')
+        split_payload = {
+            'train_fraction': train_fraction,
+            'seed': seed,
+            'n_total': n_total,
+            'n_selected': n_keep,
+            'indices': indices,
+        }
+        try:
+            split_payload['paths'] = [train_ds.dataset.paths[i] for i in indices]
+        except AttributeError:
+            pass  # dataset type doesn't expose .paths
+        with open(split_save_path, 'w') as f:
+            json.dump(split_payload, f, indent=2)
+        print(f"[TrainFraction] Saved train split to {split_save_path}")
 
     # Optionally wrap train dataset with InfoBatch
     ib_cfg = cfg.get('infobatch', {})

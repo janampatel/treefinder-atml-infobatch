@@ -1,0 +1,51 @@
+[2026-03-05 00:47:32] INFO exps.evaluate: Evaluation results:
+{'class0_precision': 0.9960469418731093, 'class0_recall': 0.9998200832454213, 'class0_f1': 0.997929446042182, 'class0_iou': 0.995868444622867, 'class1_precision': 0.7544466019319813, 'class1_recall': 0.1222749292438884, 'class1_f1': 0.21044264653675201, 'class1_iou': 0.11759495407637166, 'res_iou_macro': 0.5567316993496194, 'res_precision_macro': 0.8752467719025453, 'res_recall_macro': 0.5610475062446548, 'res_f1_macro': 0.604186046289467, 'overall_accuracy': 0.9958707181953514}
+[2026-03-05 00:47:32] INFO exps.evaluate: Generating evaluation plots...
+[2026-03-05 00:49:55] INFO root: Evaluation completed in 0.04h (2.6m).
+[2026-03-05 00:49:55] INFO root: Run 1 completed. Metrics: {'best_val_loss': 0.0009221069903548759, 'class0_precision': 0.9960469418731093, 'class0_recall': 0.9998200832454213, 'class0_f1': 0.997929446042182, 'class0_iou': 0.995868444622867, 'class1_precision': 0.7544466019319813, 'class1_recall': 0.1222749292438884, 'class1_f1': 0.21044264653675201, 'class1_iou': 0.11759495407637166, 'res_iou_macro': 0.5567316993496194, 'res_precision_macro': 0.8752467719025453, 'res_recall_macro': 0.5610475062446548, 'res_f1_macro': 0.604186046289467, 'overall_accuracy': 0.9958707181953514, 'train_fraction_seed': 2025, 'train_time_h': 5483.69128036499, 'eval_time_h': 157.4205448627472}
+
+
+[2026-03-05 02:22:04] INFO exps.evaluate: Evaluation results:
+{'class0_precision': 0.9959402805161703, 'class0_recall': 0.9998779214218863, 'class0_f1': 0.9979047165954119, 'class0_iou': 0.9958191910756014, 'class1_precision': 0.7847406886962563, 'class1_recall': 0.09844347608966442, 'class1_f1': 0.17494089417360698, 'class1_iou': 0.09585503871198575, 'res_iou_macro': 0.5458371148937935, 'res_precision_macro': 0.8903404846062133, 'res_recall_macro': 0.5491606987557753, 'res_f1_macro': 0.5864228053845094, 'overall_accuracy': 0.9958210433488998}
+[2026-03-05 02:22:04] INFO exps.evaluate: Generating evaluation plots...
+[2026-03-05 02:24:38] INFO root: Evaluation completed in 0.05h (2.8m).
+[2026-03-05 02:24:38] INFO root: Run 2 completed. Metrics: {'best_val_loss': 0.0010051322973688515, 'class0_precision': 0.9959402805161703, 'class0_recall': 0.9998779214218863, 'class0_f1': 0.9979047165954119, 'class0_iou': 0.9958191910756014, 'class1_precision': 0.7847406886962563, 'class1_recall': 0.09844347608966442, 'class1_f1': 0.17494089417360698, 'class1_iou': 0.09585503871198575, 'res_iou_macro': 0.5458371148937935, 'res_precision_macro': 0.8903404846062133, 'res_recall_macro': 0.5491606987557753, 'res_f1_macro': 0.5864228053845094, 'overall_accuracy': 0.9958210433488998, 'train_fraction_seed': 2026, 'train_time_h': 5513.43914937973, 'eval_time_h': 169.30516028404236}
+
+
+[2026-03-05 03:56:41] INFO exps.train: Total training time: 1.53h (92.0m) over 100 epoch(s). Metrics CSV saved to: results/exp003_mask2former_run3/exp003_mask2former_run3_metrics.csv
+[2026-03-05 03:56:41] INFO exps.train: Loss curve saved to results/exp003_mask2former_run3/exp003_mask2former_run3_loss_curve.png
+[2026-03-05 03:56:41] INFO root: Training completed in 1.53h (92.0m).
+[2026-03-05 03:56:41] INFO exps.evaluate: Loading model weights from checkpoints/exp003_mask2former_run3/exp003_mask2former_run3_best.pth
+Evaluating: 100%|██████████████████████████████████████████████████████████████████████████████████████████████████████████| 97/97 [00:14<00:00,  6.59it/s]
+[2026-03-05 03:56:56] INFO exps.evaluate: Evaluation results:
+{'class0_precision': 0.9960140419338147, 'class0_recall': 0.9999225093634345, 'class0_f1': 0.9979639488463687, 'class0_iou': 0.9959371677912094, 'class1_precision': 0.8701360630583969, 'class1_recall': 0.11485002276331804, 'class1_f1': 0.20291666375721262, 'class1_iou': 0.11291457048010059, 'res_iou_macro': 0.5544258691356551, 'res_precision_macro': 0.9330750524961058, 'res_recall_macro': 0.5573862660633763, 'res_f1_macro': 0.6004403063017907, 'overall_accuracy': 0.9959392677838783}
+[2026-03-05 03:56:56] INFO exps.evaluate: Generating evaluation plots...
+[2026-03-05 03:59:20] INFO root: Evaluation completed in 0.04h (2.6m).
+[2026-03-05 03:59:20] INFO root: Run 3 completed. Metrics: {'best_val_loss': 0.0007907312746959714, 'class0_precision': 0.9960140419338147, 'class0_recall': 0.9999225093634345, 'class0_f1': 0.9979639488463687, 'class0_iou': 0.9959371677912094, 'class1_precision': 0.8701360630583969, 'class1_recall': 0.11485002276331804, 'class1_f1': 0.20291666375721262, 'class1_iou': 0.11291457048010059, 'res_iou_macro': 0.5544258691356551, 'res_precision_macro': 0.9330750524961058, 'res_recall_macro': 0.5573862660633763, 'res_f1_macro': 0.6004403063017907, 'overall_accuracy': 0.9959392677838783, 'train_fraction_seed': 2027, 'train_time_h': 5522.16930937767, 'eval_time_h': 158.54279851913452}
+[2026-03-05 03:59:20] INFO root: Split comparison summary saved to: results/exp003_mask2former/exp003_mask2former_split_comparison.yaml
+[2026-03-05 03:59:20] INFO utils.gdrive_upload: [GDrive] Starting upload for experiment: exp003_mask2former
+[2026-03-05 03:59:20] INFO utils.gdrive_upload: [GDrive] Refreshing expired token...
+[2026-03-05 03:59:20] INFO utils.gdrive_upload: [GDrive] Token saved to token.json
+[2026-03-05 03:59:20] INFO googleapiclient.discovery_cache: file_cache is only supported with oauth2client<4.0.0
+[2026-03-05 03:59:21] INFO utils.gdrive_upload: [GDrive] Created folder 'treefinder-atml-runs' (id=1cgVMaFyZbBN9rQsDrQ18Jgmi615BCnrb)
+[2026-03-05 03:59:22] INFO utils.gdrive_upload: [GDrive] Created folder 'exp003_mask2former' (id=1AHu8wBBOoErK3aHNypE1KzHp5AQzYpbT)
+[2026-03-05 03:59:22] INFO utils.gdrive_upload: [GDrive] Created folder 'results' (id=15JMmnypH7_mkN0Sb4BF0QBihok6LT1bH)
+[2026-03-05 03:59:23] INFO utils.gdrive_upload: [GDrive] Uploaded: results/exp003_mask2former/exp003_mask2former_split_comparison.yaml
+[2026-03-05 03:59:23] INFO utils.gdrive_upload: [GDrive] results/ uploaded.
+[2026-03-05 03:59:23] INFO utils.gdrive_upload: [GDrive] No checkpoint dir found at checkpoints/exp003_mask2former, skipping.
+[2026-03-05 03:59:24] INFO utils.gdrive_upload: [GDrive] Created folder 'logs' (id=1ECr8kahsg2DdonwTAeUWxqLTR49gS604)
+[2026-03-05 03:59:25] INFO utils.gdrive_upload: [GDrive] Uploaded log: logs/exp003_mask2former.log
+[2026-03-05 03:59:25] INFO utils.gdrive_upload: [GDrive] Upload complete! Find your files at:
+  https://drive.google.com  →  'treefinder-atml-runs/exp003_mask2former/'
+(.venv) jpatel46@vclvm176-101:~/Desktop/treefinder-atml-infobatch$ \\\\\[2026-03-05 02:22:04] INFO exps.evaluate: Evaluation results:
+{'class0_precision': 0.9959402805161703, 'class0_recall': 0.9998779214218863, 'class0_f1': 0.9979047165954119, 'class0_iou': 0.9958191910756014, 'class1_precision': 0.7847406886962563, 'class1_recall': 0.09844347608966442, 'class1_f1': 0.17494089417360698, 'class1_iou': 0.09585503871198575, 'res_iou_macro': 0.5458371148937935, 'res_precision_macro': 0.8903404846062133, 'res_recall_macro': 0.5491606987557753, 'res_f1_macro': 0.5864228053845094, 'overall_accuracy': 0.9958210433488998}
+[2026-03-05 02:22:04] INFO exps.evaluate: Generating evaluation plots...
+[2026-03-05 02:24:38] INFO root: Evaluation completed in 0.05h (2.8m).
+[2026-03-05 02:24:38] INFO root: Run 2 completed. Metrics: {'best_val_loss': 0.0010051322973688515, 'class0_precision': 0.9959402805161703, 'class0_recall': 0.9998779214218863, 'class0_f1': 0.9979047165954119, 'class0_iou': 0.9958191910756014, 'class1_precision': 0.7847406886962563, 'class1_recall': 0.09844347608966442, 'class1_f1': 0.17494089417360698, 'class1_iou': 0.09585503871198575, 'res_iou_macro': 0.5458371148937935, 'res_precision_macro': 0.8903404846062133, 'res_recall_macro': 0.5491606987557753, 'res_f1_macro': 0.5864228053845094, 'overall_accuracy': 0.9958210433488998, 'train_fraction_seed': 2026, 'train_time_h': 5513.43914937973, 'eval_time_h': 169.30516028404236}
+[2026-03-05 02:24:38] INFO root: === Run 3/3 | exp: exp003_mask2former_run3 | train_fraction_seed: 2027 ===
+[Split] Loaded existing split from splits/random_seed2025.json
+[Split] Loaded existing split from splits/random_seed2025.json
+[Split] Loaded existing split from splits/random_seed2025.json
+[TrainFraction] Using 5576/11152 training samples (50.0%), seed=2027
+[TrainFraction] Saved train split to splits/trainfrac_0.50_seed2027.json
+s?p=0 "HTTP/1.1 200 OK"NFO httpx: HTTP Request: GET https://huggingface.co/api/models/facebook/mask2former-swin-tiny-ade-semantic/discussion
