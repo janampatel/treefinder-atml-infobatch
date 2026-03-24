@@ -76,8 +76,13 @@ class InfoBatch(Dataset):
         self.keep_ratio = min(1.0, max(1e-1, 1.0 - prune_ratio))
         self.num_epochs = num_epochs
         self.delta = delta
-        # self.scores stores the loss value of each sample. Note that smaller value indicates the sample is better learned by the network.
-        self.scores = torch.ones(len(self.dataset)) * 3
+        # self.scores stores the loss value of each sample. Smaller value means
+        # better learned. Initialise to 0 so that before any sample has been
+        # scored, well_learned_mask = (scores < mean=0) is always False →
+        # epoch 1 runs the full dataset without pruning. After epoch 1 all
+        # scores are set to actual per-pixel focal losses and the distribution
+        # spreads out so InfoBatch can meaningfully rank easy vs. hard samples.
+        self.scores = torch.zeros(len(self.dataset))
         self.weights = torch.ones(len(self.dataset))
         self.num_pruned_samples = 0
         self.cur_batch_index = None

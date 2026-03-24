@@ -211,7 +211,12 @@ def train_model(model, train_loader, val_loader, train_dataset, cfg, exp_name):
             raw_loss = criterion(outputs, labels) # (B,1,H,W)
 
             if use_infobatch:
-                # Reduce to per-image scalar [B] for InfoBatch scoring, then let update() reweight + mean
+                # Score per-image by average focal loss over valid pixels.
+                # This measures per-pixel difficulty — how much the model still
+                # needs to learn from each image — which is what InfoBatch
+                # should rank on. Sparse tiles with high per-pixel loss stay
+                # hard (high score, never pruned); easy tiles with low per-pixel
+                # loss get pruned. Clamp denominator at 1 to avoid division by zero.
                 valid_pixels_per_img = valid_mask.view(valid_mask.shape[0], -1).sum(dim=1).clamp(min=1)
                 per_img_loss = (raw_loss * valid_mask).view(raw_loss.shape[0], -1).sum(dim=1) / valid_pixels_per_img
                 bce_loss = train_dataset.update(per_img_loss)
