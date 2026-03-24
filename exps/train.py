@@ -68,12 +68,10 @@ def train_model(model, train_loader, val_loader, train_dataset, cfg, exp_name):
     logger.info(f"Using device: {device}")
 
     # Determine if InfoBatch is active
-    try:
-        from infobatch import InfoBatch
-        use_infobatch = isinstance(train_dataset, InfoBatch)
-    except ImportError:
-        use_infobatch = False
-
+    use_infobatch = cfg.get('infobatch', {}).get('enabled', False)
+    print("-----------------------------------------")
+    print(f"Using infobatch: {use_infobatch}")
+    print("-----------------------------------------")
     # Unpack training cfg
     tr_cfg = cfg['training']
     criterion_type = tr_cfg['criterion'].get('type', 'BCEWithLogitsLoss')
@@ -174,9 +172,19 @@ def train_model(model, train_loader, val_loader, train_dataset, cfg, exp_name):
     for epoch in range(1, num_epochs + 1):
         epoch_start = time.time()
         batch_size = cfg['training'].get('batch_size', 32)
-        total_steps = (len(train_dataset) + batch_size - 1) // batch_size
+        # Explicitly call reset() once per epoch so prune() runs exactly once
+        # with this epoch's scores. __iter__ on IBSampler no longer calls
+        # reset(), preventing the spurious prune() calls that PyTorch triggers
+        # internally when it re-creates the sampler iterator mid-epoch.
+        if use_infobatch:
+            train_loader.sampler.reset()
+        train_iter = iter(train_loader)
+        total_steps = len(train_loader)
+        logger.info("-----------------------------------------")
+        logger.info(f"Using infobatch: {use_infobatch}")
+        logger.info("-----------------------------------------")
         logger.info(f"Epoch {epoch} - Starting training with ~{total_steps} steps.")
-        
+
         # Training
         model.train()
         train_loss_total = 0.0
@@ -185,10 +193,7 @@ def train_model(model, train_loader, val_loader, train_dataset, cfg, exp_name):
         train_correct    = 0
         train_total_px   = 0
         step_times   = []
-        # Cap at total_steps to prevent IBSampler from resetting mid-epoch
-        # (the InfoBatch monkey-patch can cause the sampler to restart, yielding
-        #  extra batches beyond one epoch's worth of data)
-        for step, batch in enumerate(itertools.islice(train_loader, total_steps), 1):
+        for step, batch in enumerate(itertools.islice(train_iter, total_steps), 1):
             step_start = time.time()
 
             # InfoBatch monkey-patches DataLoader.__next__ to extract indices

@@ -14,8 +14,8 @@ data:
   dataset_info: "tile_info224_v3.csv"
   no_data_value: 255
   normalize: true
-  train_fraction: 0.5      # Fraction of training data to use (1.0 = 100%, 0.1 = 10%)
-  num_train_splits: 3          # Number of training runs with different random subsamples (seeds = base_seed + run_idx)
+  train_fraction: 0.7      # Fraction of training data to use (1.0 = 100%, 0.1 = 10%)
+  num_train_splits: 1          # Number of training runs with different random subsamples (seeds = base_seed + run_idx)
   augmentation:
     random_flip: true
     rotation:
@@ -109,7 +109,7 @@ output:
 
 # InfoBatch configuration
 infobatch:
-  enabled: false
+  enabled: true
   prune_ratio: 0.5                     # Fraction of easy samples to prune per epoch
   delta: 0.875                         # Fraction of total epochs with active pruning
 

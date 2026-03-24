@@ -83,7 +83,11 @@ class InfoBatch(Dataset):
         self.cur_batch_index = None
 
     def __getattr__(self, name):
-        # Delegate the method call to the self.dataset if it is not found in Wrapper
+        # Guard against recursion during pickle/unpickle in multiprocessing workers.
+        # Before __init__ completes, self.dataset isn't in __dict__ yet, so accessing
+        # it here would call __getattr__ again indefinitely.
+        if name == 'dataset':
+            raise AttributeError(name)
         return getattr(self.dataset, name)
 
     def set_active_indices(self, cur_batch_indices: torch.Tensor):
@@ -127,6 +131,7 @@ class InfoBatch(Dataset):
         # well learned samples' learning rate to keep estimation about the same
         # for the next version, also consider new class balance
 
+        print(f"[prune] called | scores mean={self.scores.mean():.4f} | scores shape={self.scores.shape} | iterations={self.num_pruned_samples}")
         well_learned_mask = (self.scores < self.scores.mean()).numpy()
         well_learned_indices = np.where(well_learned_mask)[0]
         remained_indices = np.where(~well_learned_mask)[0].tolist()
@@ -202,7 +207,12 @@ class IBSampler(object):
         return len(self.sample_indices)
 
     def __iter__(self):
-        self.reset()
+        # Do NOT call reset() here. reset() (and hence prune()) is called
+        # explicitly once per epoch from the training loop via
+        # train_loader.sampler.reset(). Calling reset() here causes prune() to
+        # fire on every spurious iter(sampler) that PyTorch triggers internally
+        # (e.g. via the _sampler_iter-is-None guard in info_hack_indices).
+        self.iter_obj = iter(self.sample_indices)
         return self
 
 

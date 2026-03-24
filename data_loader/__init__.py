@@ -67,7 +67,7 @@ def get_dataloader(cfg: dict, train_fraction_seed: int = None):
 
     if use_infobatch:
         print("Using InfoBatch for training")
-        from infobatch import InfoBatch
+        from upd_info import InfoBatch
         num_epochs = cfg['training']['epochs']
         prune_ratio = ib_cfg.get('prune_ratio', 0.5)
         delta = ib_cfg.get('delta', 0.875)
@@ -75,27 +75,33 @@ def get_dataloader(cfg: dict, train_fraction_seed: int = None):
         train_sampler = train_ds.sampler
         train_shuffle = False  # sampler handles ordering
 
+    num_workers = cfg['experiment'].get("num_workers", 16)
+    persistent = num_workers > 0
+
     train_loader = DataLoader(
         train_ds,
         batch_size=cfg['training'].get("batch_size", 32),
         shuffle=train_shuffle,
         sampler=train_sampler,
-        num_workers=cfg['experiment'].get("num_workers", 16),
+        num_workers=num_workers,
         pin_memory=True,
-        prefetch_factor=2)
+        prefetch_factor=2 if num_workers > 0 else None,
+        persistent_workers=persistent)
     val_loader = DataLoader(
         val_ds,
         batch_size=cfg['training'].get("batch_size", 32),
         shuffle=False,
-        num_workers=cfg['experiment'].get("num_workers", 16),
+        num_workers=num_workers,
         pin_memory=True,
-        prefetch_factor=2)
+        prefetch_factor=2 if num_workers > 0 else None,
+        persistent_workers=persistent)
     test_loader = DataLoader(
         test_ds,
         batch_size=cfg['training'].get("batch_size", 32),
         shuffle=False,
-        num_workers=cfg['experiment'].get("num_workers", 16),
+        num_workers=num_workers,
         pin_memory=True,
-        prefetch_factor=2)
+        prefetch_factor=2 if num_workers > 0 else None,
+        persistent_workers=persistent)
 
     return train_loader, val_loader, test_loader, train_ds
