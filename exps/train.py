@@ -211,22 +211,34 @@ def train_model(model, train_loader, val_loader, train_dataset, cfg, exp_name):
             raw_loss = criterion(outputs, labels) # (B,1,H,W)
 
             if use_infobatch:
-                # Score per-image by average focal loss over valid pixels.
-                # This measures per-pixel difficulty — how much the model still
-                # needs to learn from each image — which is what InfoBatch
-                # should rank on. Sparse tiles with high per-pixel loss stay
-                # hard (high score, never pruned); easy tiles with low per-pixel
-                # loss get pruned. Clamp denominator at 1 to avoid division by zero.
+                # Per-image BCE score: average focal loss over valid pixels.
                 valid_pixels_per_img = valid_mask.view(valid_mask.shape[0], -1).sum(dim=1).clamp(min=1)
-                per_img_loss = (raw_loss * valid_mask).view(raw_loss.shape[0], -1).sum(dim=1) / valid_pixels_per_img
-                bce_loss = train_dataset.update(per_img_loss)
+                per_img_bce = (raw_loss * valid_mask).view(raw_loss.shape[0], -1).sum(dim=1) / valid_pixels_per_img
+
+                if w_dice > 0:
+                    dloss = dice_loss(outputs, labels, valid_mask)
+                    # Per-image dice score for H(z) = BCE + w_dice * dice (spec §1).
+                    B = outputs.shape[0]
+                    p_flat = (torch.sigmoid(outputs) * valid_mask).view(B, -1)
+                    t_flat = (labels * valid_mask).view(B, -1)
+                    eps = dice_loss.eps
+                    inter = (p_flat * t_flat).sum(dim=1)
+                    union = p_flat.sum(dim=1) + t_flat.sum(dim=1)
+                    per_img_dice = 1 - (inter + eps) / (union + eps)
+                    per_img_score = per_img_bce + w_dice * per_img_dice
+                else:
+                    dloss = torch.tensor(0.0, device=device)
+                    per_img_score = per_img_bce
+
+                # Pass combined H(z) as the pruning score; BCE component is
+                # used for gradient rescaling so the dice term stays separate.
+                bce_loss = train_dataset.update(per_img_bce, scores=per_img_score)
             else:
                 bce_loss = (raw_loss * valid_mask).sum() / valid_mask.sum()
-
-            if w_dice > 0:
-                dloss = dice_loss(outputs, labels, valid_mask)
-            else: 
-                dloss = torch.tensor(0.0, device=device)
+                if w_dice > 0:
+                    dloss = dice_loss(outputs, labels, valid_mask)
+                else:
+                    dloss = torch.tensor(0.0, device=device)
                 
             total_loss = bce_loss + w_dice * dloss
             total_loss.backward()

@@ -76,13 +76,13 @@ class InfoBatch(Dataset):
         self.keep_ratio = min(1.0, max(1e-1, 1.0 - prune_ratio))
         self.num_epochs = num_epochs
         self.delta = delta
-        # self.scores stores the loss value of each sample. Smaller value means
-        # better learned. Initialise to 0 so that before any sample has been
-        # scored, well_learned_mask = (scores < mean=0) is always False →
-        # epoch 1 runs the full dataset without pruning. After epoch 1 all
-        # scores are set to actual per-pixel focal losses and the distribution
-        # spreads out so InfoBatch can meaningfully rank easy vs. hard samples.
-        self.scores = torch.zeros(len(self.dataset))
+        # self.scores stores the loss value (H(z)) of each sample. Smaller
+        # value means better learned. Initialised to 1 per the spec so that
+        # epoch 1 sees a uniform score distribution: mean=1, all samples have
+        # score == mean, well_learned_mask is always False, and the full dataset
+        # is used without pruning. After epoch 1 scores reflect actual losses
+        # and InfoBatch can meaningfully rank easy vs. hard samples.
+        self.scores = torch.ones(len(self.dataset))
         self.weights = torch.ones(len(self.dataset))
         self.num_pruned_samples = 0
         self.cur_batch_index = None
@@ -98,22 +98,32 @@ class InfoBatch(Dataset):
     def set_active_indices(self, cur_batch_indices: torch.Tensor):
         self.cur_batch_index = cur_batch_indices
 
-    def update(self, values):
+    def update(self, values, scores=None):
+        """Update sample scores and return the weighted mean loss for backprop.
+
+        Args:
+            values: Per-image loss tensor used for gradient rescaling (backprop).
+            scores: Optional per-image score tensor used for pruning decisions
+                    (H(z) in the paper). If None, ``values`` is used as the score.
+                    Pass a combined loss (e.g. BCE + w_dice * dice) here while
+                    keeping ``values`` as the BCE-only component so that each
+                    loss term can still be rescaled independently.
+        """
         assert isinstance(values, torch.Tensor)
         batch_size = values.shape[0]
         assert len(self.cur_batch_index) == batch_size, 'not enough index'
         device = values.device
         weights = self.weights[self.cur_batch_index].to(device)
         indices = self.cur_batch_index.to(device)
-        loss_val = values.detach().clone()
+        score_val = (scores if scores is not None else values).detach().clone()
         self.cur_batch_index = []
 
         if dist.is_available() and dist.is_initialized():
-            iv = torch.cat([indices.view(1, -1), loss_val.view(1, -1)], dim=0)
+            iv = torch.cat([indices.view(1, -1), score_val.view(1, -1)], dim=0)
             iv_whole_group = concat_all_gather(iv, 1)
             indices = iv_whole_group[0]
-            loss_val = iv_whole_group[1]
-        self.scores[indices.cpu().long()] = loss_val.cpu()
+            score_val = iv_whole_group[1]
+        self.scores[indices.cpu().long()] = score_val.cpu()
         values.mul_(weights)
         return values.mean()
 
@@ -196,7 +206,7 @@ class IBSampler(object):
         np.random.seed(self.iterations)
         if self.iterations > self.stop_prune:
             # print('we are going to stop prune, #stop prune %d, #cur iterations %d' % (self.iterations, self.stop_prune))
-            if self.iterations == self.stop_prune + 1:
+            if self.iterations == int(self.stop_prune) + 1:
                 self.dataset.reset_weights()
             self.sample_indices = self.dataset.no_prune()
         else:
