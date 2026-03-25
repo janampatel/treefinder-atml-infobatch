@@ -177,7 +177,11 @@ def train_model(model, train_loader, val_loader, train_dataset, cfg, exp_name):
         # reset(), preventing the spurious prune() calls that PyTorch triggers
         # internally when it re-creates the sampler iterator mid-epoch.
         if use_infobatch:
-            train_loader.sampler.reset()
+            # IBSampler has reset(); DistributedIBSampler handles reset() inside
+            # its own __iter__, so skip the explicit call in distributed mode.
+            sampler = train_loader.sampler
+            if hasattr(sampler, 'reset'):
+                sampler.reset()
         train_iter = iter(train_loader)
         total_steps = len(train_loader)
         logger.info("-----------------------------------------")
@@ -219,7 +223,6 @@ def train_model(model, train_loader, val_loader, train_dataset, cfg, exp_name):
                 batch_weights = train_dataset.weights[train_dataset.cur_batch_index].to(device)
 
                 if w_dice > 0:
-                    dloss = dice_loss(outputs, labels, valid_mask)
                     # Per-image dice score for H(z) = BCE + w_dice * dice (spec §1).
                     B = outputs.shape[0]
                     p_flat = (torch.sigmoid(outputs) * valid_mask).view(B, -1)
@@ -229,8 +232,8 @@ def train_model(model, train_loader, val_loader, train_dataset, cfg, exp_name):
                     union = p_flat.sum(dim=1) + t_flat.sum(dim=1)
                     per_img_dice = 1 - (inter + eps) / (union + eps)
                     per_img_score = per_img_bce + w_dice * per_img_dice
-                    # Rescale dice by mean batch weight to match BCE's gradient compensation.
-                    dloss = dloss * batch_weights.mean()
+                    # Rescale dice with per-sample weights (same as BCE) for unbiased gradients.
+                    dloss = (per_img_dice * batch_weights).mean()
                 else:
                     dloss = torch.tensor(0.0, device=device)
                     per_img_score = per_img_bce
