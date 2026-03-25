@@ -215,6 +215,9 @@ def train_model(model, train_loader, val_loader, train_dataset, cfg, exp_name):
                 valid_pixels_per_img = valid_mask.view(valid_mask.shape[0], -1).sum(dim=1).clamp(min=1)
                 per_img_bce = (raw_loss * valid_mask).view(raw_loss.shape[0], -1).sum(dim=1) / valid_pixels_per_img
 
+                # Capture batch weights before update() clears cur_batch_index.
+                batch_weights = train_dataset.weights[train_dataset.cur_batch_index].to(device)
+
                 if w_dice > 0:
                     dloss = dice_loss(outputs, labels, valid_mask)
                     # Per-image dice score for H(z) = BCE + w_dice * dice (spec §1).
@@ -226,6 +229,8 @@ def train_model(model, train_loader, val_loader, train_dataset, cfg, exp_name):
                     union = p_flat.sum(dim=1) + t_flat.sum(dim=1)
                     per_img_dice = 1 - (inter + eps) / (union + eps)
                     per_img_score = per_img_bce + w_dice * per_img_dice
+                    # Rescale dice by mean batch weight to match BCE's gradient compensation.
+                    dloss = dloss * batch_weights.mean()
                 else:
                     dloss = torch.tensor(0.0, device=device)
                     per_img_score = per_img_bce

@@ -124,8 +124,7 @@ class InfoBatch(Dataset):
             indices = iv_whole_group[0]
             score_val = iv_whole_group[1]
         self.scores[indices.cpu().long()] = score_val.cpu()
-        values.mul_(weights)
-        return values.mean()
+        return (values * weights).mean()
 
     def __len__(self):
         return len(self.dataset)
