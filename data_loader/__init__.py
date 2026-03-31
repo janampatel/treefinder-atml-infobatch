@@ -5,6 +5,24 @@ import numpy as np
 from torch.utils.data import DataLoader
 
 
+def _compute_minority_mask(dataset):
+    """Return a boolean numpy array of shape (N,) where True means the tile
+    contains at least one positive (tree) pixel.
+
+    Iterated once before training begins. Used by InfoBatch to ensure
+    minority-class tiles are never pruned regardless of their loss score.
+    """
+    import torch
+    mask = np.zeros(len(dataset), dtype=bool)
+    for i in range(len(dataset)):
+        label = dataset[i]['label']
+        if isinstance(label, torch.Tensor):
+            mask[i] = label.any().item()
+        else:
+            mask[i] = np.any(label > 0)
+    return mask
+
+
 def get_dataloader(cfg: dict, train_fraction_seed: int = None):
     """Return train, val, test DataLoaders and the train dataset (possibly InfoBatch-wrapped).
 
@@ -71,7 +89,14 @@ def get_dataloader(cfg: dict, train_fraction_seed: int = None):
         num_epochs = cfg['training']['epochs']
         prune_ratio = ib_cfg.get('prune_ratio', 0.5)
         delta = ib_cfg.get('delta', 0.875)
-        train_ds = InfoBatch(train_ds, num_epochs=num_epochs, prune_ratio=prune_ratio, delta=delta)
+        protect_minority = ib_cfg.get('protect_minority', False)
+        minority_mask = _compute_minority_mask(train_ds) if protect_minority else None
+        if minority_mask is not None:
+            n_minority = int(minority_mask.sum())
+            print(f"[InfoBatch] Minority protection enabled: {n_minority}/{len(train_ds)} tiles "
+                  f"contain tree pixels and will never be pruned.")
+        train_ds = InfoBatch(train_ds, num_epochs=num_epochs, prune_ratio=prune_ratio,
+                             delta=delta, minority_mask=minority_mask)
         train_sampler = train_ds.sampler
         train_shuffle = False  # sampler handles ordering
 

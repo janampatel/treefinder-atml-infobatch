@@ -112,6 +112,7 @@ infobatch:
   enabled: true
   prune_ratio: 0.5                     # Fraction of easy samples to prune per epoch
   delta: 0.875                         # Fraction of total epochs with active pruning
+  protect_minority: true               # Never prune tiles containing tree pixels
 
 # Logging configuration
 logging:

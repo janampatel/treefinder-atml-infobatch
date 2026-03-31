@@ -71,7 +71,8 @@ class InfoBatch(Dataset):
     """
 
     def __init__(self, dataset: Dataset, num_epochs: int,
-                 prune_ratio: float = 0.5, delta: float = 0.875):
+                 prune_ratio: float = 0.5, delta: float = 0.875,
+                 minority_mask=None):
         self.dataset = dataset
         self.keep_ratio = min(1.0, max(1e-1, 1.0 - prune_ratio))
         self.num_epochs = num_epochs
@@ -86,6 +87,12 @@ class InfoBatch(Dataset):
         self.weights = torch.ones(len(self.dataset))
         self.num_pruned_samples = 0
         self.cur_batch_index = None
+        # minority_mask[i] = True means tile i contains tree pixels and must
+        # never be a pruning candidate, regardless of its loss score.
+        if minority_mask is not None:
+            self.minority_mask = np.asarray(minority_mask, dtype=bool)
+        else:
+            self.minority_mask = None
 
     def __getattr__(self, name):
         # Guard against recursion during pickle/unpickle in multiprocessing workers.
@@ -147,6 +154,13 @@ class InfoBatch(Dataset):
 
         print(f"[prune] called | scores mean={self.scores.mean():.4f} | scores shape={self.scores.shape} | iterations={self.num_pruned_samples}")
         well_learned_mask = (self.scores < self.scores.mean()).numpy()
+
+        # Exclude minority-class tiles from the pruning pool entirely.
+        # They are moved directly to remained_indices with weight 1.0,
+        # ensuring tree-containing tiles are always seen during training.
+        if self.minority_mask is not None:
+            well_learned_mask = well_learned_mask & ~self.minority_mask
+
         well_learned_indices = np.where(well_learned_mask)[0]
         remained_indices = np.where(~well_learned_mask)[0].tolist()
         # print('#well learned samples %d, #remained samples %d, len(dataset) = %d' % (np.sum(well_learned_mask), np.sum(~well_learned_mask), len(self.dataset)))
