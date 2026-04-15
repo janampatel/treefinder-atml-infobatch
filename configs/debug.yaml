@@ -107,12 +107,14 @@ output:
   results_dir: "results/"               # Where to write final metrics (e.g. JSON, CSV)
   checkpoint_dir: "checkpoints/"        # Where to save model weights
 
-# InfoBatch configuration
+# CS-IB (Class-Stratified InfoBatch) configuration
 infobatch:
   enabled: true
-  prune_ratio: 0.5                     # Fraction of easy samples to prune per epoch
-  delta: 0.875                         # Fraction of total epochs with active pruning
-  protect_minority: true               # Never prune tiles containing tree pixels
+  prune_ratio: 0.5                     # Max fraction of easy samples to prune per epoch
+  delta: 0.875                         # Fraction of total epochs with active pruning (Phase 2 end)
+  warmup_fraction: 0.1                 # Phase 1: fraction of epochs with no pruning (score warmup)
+  ema_beta: 0.7                        # EMA decay for score smoothing (half-life ≈ 2 epochs)
+  fg_pixel_fraction: 0.003722          # Global foreground pixel fraction (from EDA)
 
 # Logging configuration
 logging:

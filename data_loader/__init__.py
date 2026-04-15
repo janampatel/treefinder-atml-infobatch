@@ -5,22 +5,23 @@ import numpy as np
 from torch.utils.data import DataLoader
 
 
-def _compute_minority_mask(dataset):
+def _compute_cls_labels(dataset):
     """Return a boolean numpy array of shape (N,) where True means the tile
     contains at least one positive (tree) pixel.
 
-    Iterated once before training begins. Used by InfoBatch to ensure
-    minority-class tiles are never pruned regardless of their loss score.
+    Iterated once before training begins. Used by CS-IB for class-stratified
+    pruning thresholds: positive tiles and negative tiles are pruned against
+    their own per-class mean, preventing the majority class from dominating.
     """
     import torch
-    mask = np.zeros(len(dataset), dtype=bool)
+    labels = np.zeros(len(dataset), dtype=bool)
     for i in range(len(dataset)):
         label = dataset[i]['label']
         if isinstance(label, torch.Tensor):
-            mask[i] = label.any().item()
+            labels[i] = label.any().item()
         else:
-            mask[i] = np.any(label > 0)
-    return mask
+            labels[i] = np.any(label > 0)
+    return labels
 
 
 def get_dataloader(cfg: dict, train_fraction_seed: int = None):
@@ -54,28 +55,45 @@ def get_dataloader(cfg: dict, train_fraction_seed: int = None):
         n_total = len(train_ds)
         n_keep = max(1, math.floor(n_total * train_fraction))
         seed = train_fraction_seed if train_fraction_seed is not None else cfg['experiment']['seed']
-        rng = np.random.RandomState(seed)
-        indices = rng.permutation(n_total)[:n_keep].tolist()
-        train_ds = Subset(train_ds, indices)
-        print(f"[TrainFraction] Using {n_keep}/{n_total} training samples ({train_fraction*100:.1f}%), seed={seed}")
 
-        # Save the selected split to disk for reproducibility
         os.makedirs('splits', exist_ok=True)
         split_save_path = os.path.join('splits', f'trainfrac_{train_fraction:.2f}_seed{seed}.json')
-        split_payload = {
-            'train_fraction': train_fraction,
-            'seed': seed,
-            'n_total': n_total,
-            'n_selected': n_keep,
-            'indices': indices,
-        }
-        try:
-            split_payload['paths'] = [train_ds.dataset.paths[i] for i in indices]
-        except AttributeError:
-            pass  # dataset type doesn't expose .paths
-        with open(split_save_path, 'w') as f:
-            json.dump(split_payload, f, indent=2)
-        print(f"[TrainFraction] Saved train split to {split_save_path}")
+
+        if os.path.exists(split_save_path):
+            # Reuse the existing split — guarantees identical data across runs
+            with open(split_save_path) as f:
+                split_payload = json.load(f)
+            indices = split_payload['indices']
+            # Sanity-check: dataset size must match what was recorded
+            if split_payload['n_total'] != n_total:
+                raise ValueError(
+                    f"[TrainFraction] Cached split at {split_save_path} was built on "
+                    f"{split_payload['n_total']} samples but current dataset has {n_total}. "
+                    f"Delete the file to regenerate."
+                )
+            print(f"[TrainFraction] Loaded existing split from {split_save_path} "
+                  f"({len(indices)}/{n_total} samples, seed={seed})")
+        else:
+            # First run: generate and save the split
+            rng = np.random.RandomState(seed)
+            indices = rng.permutation(n_total)[:n_keep].tolist()
+            split_payload = {
+                'train_fraction': train_fraction,
+                'seed': seed,
+                'n_total': n_total,
+                'n_selected': n_keep,
+                'indices': indices,
+            }
+            try:
+                split_payload['paths'] = [train_ds.paths[i] for i in indices]
+            except AttributeError:
+                pass  # dataset type doesn't expose .paths
+            with open(split_save_path, 'w') as f:
+                json.dump(split_payload, f, indent=2)
+            print(f"[TrainFraction] Created new split, saved to {split_save_path} "
+                  f"({n_keep}/{n_total} samples, seed={seed})")
+
+        train_ds = Subset(train_ds, indices)
 
     # Optionally wrap train dataset with InfoBatch
     ib_cfg = cfg.get('infobatch', {})
@@ -84,19 +102,29 @@ def get_dataloader(cfg: dict, train_fraction_seed: int = None):
     train_shuffle = True
 
     if use_infobatch:
-        print("Using InfoBatch for training")
+        print("Using CS-IB (Class-Stratified InfoBatch) for training")
         from upd_info import InfoBatch
         num_epochs = cfg['training']['epochs']
-        prune_ratio = ib_cfg.get('prune_ratio', 0.5)
-        delta = ib_cfg.get('delta', 0.875)
-        protect_minority = ib_cfg.get('protect_minority', False)
-        minority_mask = _compute_minority_mask(train_ds) if protect_minority else None
-        if minority_mask is not None:
-            n_minority = int(minority_mask.sum())
-            print(f"[InfoBatch] Minority protection enabled: {n_minority}/{len(train_ds)} tiles "
-                  f"contain tree pixels and will never be pruned.")
-        train_ds = InfoBatch(train_ds, num_epochs=num_epochs, prune_ratio=prune_ratio,
-                             delta=delta, minority_mask=minority_mask)
+        prune_ratio  = ib_cfg.get('prune_ratio', 0.5)
+        delta        = ib_cfg.get('delta', 0.875)
+        fg_pix_frac  = ib_cfg.get('fg_pixel_fraction', 0.003722)
+        warmup_frac  = ib_cfg.get('warmup_fraction', 0.1)
+        ema_beta     = ib_cfg.get('ema_beta', 0.7)
+        # Always compute cls_labels — used for class-stratified pruning thresholds
+        cls_labels = _compute_cls_labels(train_ds)
+        n_pos = int(cls_labels.sum())
+        print(f"[CS-IB] cls_labels computed: {n_pos}/{len(train_ds)} positive tiles "
+              f"({100*n_pos/max(len(train_ds),1):.1f}%)")
+        train_ds = InfoBatch(
+            train_ds,
+            num_epochs=num_epochs,
+            prune_ratio=prune_ratio,
+            delta=delta,
+            cls_labels=cls_labels,
+            fg_pixel_fraction=fg_pix_frac,
+            warmup_fraction=warmup_frac,
+            ema_beta=ema_beta,
+        )
         train_sampler = train_ds.sampler
         train_shuffle = False  # sampler handles ordering
 

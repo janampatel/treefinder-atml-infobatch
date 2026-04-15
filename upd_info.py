@@ -72,27 +72,31 @@ class InfoBatch(Dataset):
 
     def __init__(self, dataset: Dataset, num_epochs: int,
                  prune_ratio: float = 0.5, delta: float = 0.875,
-                 minority_mask=None):
+                 cls_labels=None, fg_pixel_fraction: float = 0.003722,
+                 warmup_fraction: float = 0.1, ema_beta: float = 0.7):
         self.dataset = dataset
         self.keep_ratio = min(1.0, max(1e-1, 1.0 - prune_ratio))
         self.num_epochs = num_epochs
         self.delta = delta
-        # self.scores stores the loss value (H(z)) of each sample. Smaller
-        # value means better learned. Initialised to 1 per the spec so that
-        # epoch 1 sees a uniform score distribution: mean=1, all samples have
-        # score == mean, well_learned_mask is always False, and the full dataset
-        # is used without pruning. After epoch 1 scores reflect actual losses
-        # and InfoBatch can meaningfully rank easy vs. hard samples.
+        # self.scores stores the loss value H(z) of each sample. Initialised to
+        # 1.0 so warmup epochs see a uniform distribution (no pruning fires).
         self.scores = torch.ones(len(self.dataset))
         self.weights = torch.ones(len(self.dataset))
         self.num_pruned_samples = 0
         self.cur_batch_index = None
-        # minority_mask[i] = True means tile i contains tree pixels and must
-        # never be a pruning candidate, regardless of its loss score.
-        if minority_mask is not None:
-            self.minority_mask = np.asarray(minority_mask, dtype=bool)
-        else:
-            self.minority_mask = None
+
+        # CS-IB additions
+        # cls_labels[i] = True  →  tile i contains at least one foreground pixel
+        self.cls_labels = np.asarray(cls_labels, dtype=bool) if cls_labels is not None else None
+        # Class-balanced score weights: w_fg upweights rare foreground signal
+        self.w_fg = 1.0 / (2.0 * max(fg_pixel_fraction, 1e-6))
+        self.w_bg = 1.0 / (2.0 * max(1.0 - fg_pixel_fraction, 1e-6))
+        # Warmup: Phase 1 lasts warmup_epochs epochs with no pruning
+        self.warmup_epochs = max(1, int(warmup_fraction * num_epochs))
+        self.ema_beta = ema_beta
+
+        print(f"[CS-IB] warmup_epochs={self.warmup_epochs}, stop_prune={int(self.stop_prune)}, "
+              f"w_fg={self.w_fg:.2f}, w_bg={self.w_bg:.4f}, ema_beta={self.ema_beta}")
 
     def __getattr__(self, name):
         # Guard against recursion during pickle/unpickle in multiprocessing workers.
@@ -130,7 +134,9 @@ class InfoBatch(Dataset):
             iv_whole_group = concat_all_gather(iv, 1)
             indices = iv_whole_group[0]
             score_val = iv_whole_group[1]
-        self.scores[indices.cpu().long()] = score_val.cpu()
+        # EMA smoothing: reduces noise from single-epoch scores
+        idx = indices.cpu().long()
+        self.scores[idx] = self.ema_beta * self.scores[idx] + (1.0 - self.ema_beta) * score_val.cpu()
         return (values * weights).mean()
 
     def __len__(self):
@@ -147,32 +153,62 @@ class InfoBatch(Dataset):
         # ensure the (index, data) tuple format that info_hack_indices expects.
         return [self.__getitem__(idx) for idx in indices]
 
-    def prune(self):
-        # Prune samples that are well learned, rebalance the weight by scaling up remaining
-        # well learned samples' learning rate to keep estimation about the same
-        # for the next version, also consider new class balance
+    def prune(self, effective_keep_ratio=None):
+        """Class-stratified pruning with progressive keep ratio.
 
-        print(f"[prune] called | scores mean={self.scores.mean():.4f} | scores shape={self.scores.shape} | iterations={self.num_pruned_samples}")
-        well_learned_mask = (self.scores < self.scores.mean()).numpy()
+        Applies pruning independently within positive tiles (cls_labels=True)
+        and negative tiles (cls_labels=False), so both classes contribute to
+        the pruning pool and class imbalance does not bias the threshold.
 
-        # Exclude minority-class tiles from the pruning pool entirely.
-        # They are moved directly to remained_indices with weight 1.0,
-        # ensuring tree-containing tiles are always seen during training.
-        if self.minority_mask is not None:
-            well_learned_mask = well_learned_mask & ~self.minority_mask
-
-        well_learned_indices = np.where(well_learned_mask)[0]
-        remained_indices = np.where(~well_learned_mask)[0].tolist()
-        # print('#well learned samples %d, #remained samples %d, len(dataset) = %d' % (np.sum(well_learned_mask), np.sum(~well_learned_mask), len(self.dataset)))
-        selected_indices = np.random.choice(well_learned_indices, int(
-            self.keep_ratio * len(well_learned_indices)), replace=False)
+        When cls_labels is None falls back to the original global-mean logic.
+        """
+        kr = effective_keep_ratio if effective_keep_ratio is not None else self.keep_ratio
+        scores_np = self.scores.numpy()
+        remained = []
         self.reset_weights()
-        if len(selected_indices) > 0:
-            self.weights[selected_indices] = 1 / self.keep_ratio
-            remained_indices.extend(selected_indices)
-        self.num_pruned_samples += len(self.dataset) - len(remained_indices)
-        np.random.shuffle(remained_indices)
-        return remained_indices
+
+        if self.cls_labels is not None:
+            pruned_pos = 0
+            pruned_neg = 0
+            for group_flag in [False, True]:           # negatives first, then positives
+                idx = np.where(self.cls_labels == group_flag)[0]
+                if len(idx) == 0:
+                    continue
+                group_scores = scores_np[idx]
+                threshold = group_scores.mean()
+                easy_mask = group_scores < threshold
+                hard_idx  = idx[~easy_mask]
+                easy_idx  = idx[easy_mask]
+                remained.extend(hard_idx.tolist())
+                if len(easy_idx) > 0:
+                    n_keep = max(0, int(kr * len(easy_idx)))
+                    kept = np.random.choice(easy_idx, n_keep, replace=False)
+                    if len(kept) > 0:
+                        self.weights[kept] = 1.0 / kr
+                        remained.extend(kept.tolist())
+                    pruned_this = len(easy_idx) - n_keep
+                    if group_flag:
+                        pruned_pos += pruned_this
+                    else:
+                        pruned_neg += pruned_this
+            print(f"[CS-IB prune] kr={kr:.3f} | pruned pos={pruned_pos} neg={pruned_neg} "
+                  f"| remained={len(remained)}/{len(self.dataset)}")
+        else:
+            # Fallback: original global-threshold logic (no cls_labels provided)
+            threshold = scores_np.mean()
+            easy_idx  = np.where(scores_np < threshold)[0]
+            hard_idx  = np.where(scores_np >= threshold)[0]
+            remained.extend(hard_idx.tolist())
+            n_keep = int(kr * len(easy_idx))
+            kept = np.random.choice(easy_idx, n_keep, replace=False)
+            if len(kept) > 0:
+                self.weights[kept] = 1.0 / kr
+                remained.extend(kept.tolist())
+            print(f"[InfoBatch prune] kr={kr:.3f} | remained={len(remained)}/{len(self.dataset)}")
+
+        self.num_pruned_samples += len(self.dataset) - len(remained)
+        np.random.shuffle(remained)
+        return remained
 
     @property
     def sampler(self):
@@ -217,14 +253,32 @@ class IBSampler(object):
 
     def reset(self):
         np.random.seed(self.iterations)
-        if self.iterations > self.stop_prune:
-            # print('we are going to stop prune, #stop prune %d, #cur iterations %d' % (self.iterations, self.stop_prune))
-            if self.iterations == int(self.stop_prune) + 1:
+        warmup_stop = self.dataset.warmup_epochs      # Phase 1 end (inclusive)
+        prune_stop  = self.stop_prune                 # Phase 2 end = delta * num_epochs
+
+        if self.iterations <= warmup_stop:
+            # Phase 1: warmup — full dataset, no pruning, EMA scores accumulate
+            print(f"[CS-IB] epoch={self.iterations} Phase 1 (warmup): full dataset, no pruning")
+            self.sample_indices = self.dataset.no_prune()
+
+        elif self.iterations <= prune_stop:
+            # Phase 2: CS-pruning with progressive ratio ramp
+            #   ρ(t) = ρ_max * (t - warmup_stop) / (prune_stop - warmup_stop)
+            ramp = (self.iterations - warmup_stop) / max(1, prune_stop - warmup_stop)
+            prune_ratio_max = 1.0 - self.dataset.keep_ratio   # ρ_max from config
+            effective_prune = prune_ratio_max * ramp
+            effective_keep  = max(self.dataset.keep_ratio, 1.0 - effective_prune)
+            print(f"[CS-IB] epoch={self.iterations} Phase 2 (pruning): ramp={ramp:.3f} "
+                  f"effective_keep={effective_keep:.3f}")
+            self.sample_indices = self.dataset.prune(effective_keep_ratio=effective_keep)
+
+        else:
+            # Phase 3: annealing — full dataset, weights reset to 1.0
+            if self.iterations == int(prune_stop) + 1:
+                print(f"[CS-IB] epoch={self.iterations} Phase 3 start: resetting weights")
                 self.dataset.reset_weights()
             self.sample_indices = self.dataset.no_prune()
-        else:
-            # print('we are going to continue pruning, #stop prune %d, #cur iterations %d' % (self.iterations, self.stop_prune))
-            self.sample_indices = self.dataset.prune()
+
         self.iter_obj = iter(self.sample_indices)
         self.iterations += 1
 

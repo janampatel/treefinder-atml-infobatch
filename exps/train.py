@@ -215,31 +215,44 @@ def train_model(model, train_loader, val_loader, train_dataset, cfg, exp_name):
             raw_loss = criterion(outputs, labels) # (B,1,H,W)
 
             if use_infobatch:
-                # Per-image BCE score: average focal loss over valid pixels.
-                valid_pixels_per_img = valid_mask.view(valid_mask.shape[0], -1).sum(dim=1).clamp(min=1)
-                per_img_bce = (raw_loss * valid_mask).view(raw_loss.shape[0], -1).sum(dim=1) / valid_pixels_per_img
+                B = outputs.shape[0]
+                # Per-image BCE: mean over valid pixels (used for gradient rescaling)
+                valid_pixels_per_img = valid_mask.view(B, -1).sum(dim=1).clamp(min=1)
+                per_img_bce = (raw_loss * valid_mask).view(B, -1).sum(dim=1) / valid_pixels_per_img
 
                 # Capture batch weights before update() clears cur_batch_index.
                 batch_weights = train_dataset.weights[train_dataset.cur_batch_index].to(device)
 
+                # Class-balanced score H(zᵢ) = w_fg * L_fg * has_fg + w_bg * L_bg
+                # This ensures positive tiles are only "easy" when the model has
+                # actually learned their tree pixels, not just when the background is easy.
+                fg_mask  = (labels > 0.5).float() * valid_mask
+                bg_mask  = (labels <= 0.5).float() * valid_mask
+                n_fg     = fg_mask.view(B, -1).sum(dim=1).clamp(min=1)
+                n_bg     = bg_mask.view(B, -1).sum(dim=1).clamp(min=1)
+                L_fg     = (raw_loss * fg_mask).view(B, -1).sum(dim=1) / n_fg
+                L_bg     = (raw_loss * bg_mask).view(B, -1).sum(dim=1) / n_bg
+                # Zero out L_fg for negative tiles (no foreground pixels present)
+                has_fg   = (fg_mask.view(B, -1).sum(dim=1) > 0).float()
+                w_fg_val = train_dataset.w_fg
+                w_bg_val = train_dataset.w_bg
+                per_img_score = w_fg_val * L_fg * has_fg + w_bg_val * L_bg
+
                 if w_dice > 0:
-                    # Per-image dice score for H(z) = BCE + w_dice * dice (spec §1).
-                    B = outputs.shape[0]
+                    # Add dice component to scoring and compute rescaled dice loss
                     p_flat = (torch.sigmoid(outputs) * valid_mask).view(B, -1)
                     t_flat = (labels * valid_mask).view(B, -1)
                     eps = dice_loss.eps
                     inter = (p_flat * t_flat).sum(dim=1)
                     union = p_flat.sum(dim=1) + t_flat.sum(dim=1)
                     per_img_dice = 1 - (inter + eps) / (union + eps)
-                    per_img_score = per_img_bce + w_dice * per_img_dice
-                    # Rescale dice with per-sample weights (same as BCE) for unbiased gradients.
+                    per_img_score = per_img_score + w_dice * per_img_dice
+                    # Rescale dice with per-sample weights for unbiased gradients.
                     dloss = (per_img_dice * batch_weights).mean()
                 else:
                     dloss = torch.tensor(0.0, device=device)
-                    per_img_score = per_img_bce
 
-                # Pass combined H(z) as the pruning score; BCE component is
-                # used for gradient rescaling so the dice term stays separate.
+                # Pass class-balanced H(z) as score; per_img_bce used for gradient rescaling
                 bce_loss = train_dataset.update(per_img_bce, scores=per_img_score)
             else:
                 bce_loss = (raw_loss * valid_mask).sum() / valid_mask.sum()

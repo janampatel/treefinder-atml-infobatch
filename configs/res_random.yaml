@@ -97,3 +97,12 @@ output:
 logging:
   log_dir: "logs/"                     # Directory for logging
   log_interval: 100                     # Log training status every N batches
+
+# CS-IB (Class-Stratified InfoBatch) configuration
+infobatch:
+  enabled: true
+  prune_ratio: 0.5                     # Max fraction of easy samples to prune per epoch
+  delta: 0.875                         # Fraction of total epochs with active pruning (Phase 2 end)
+  warmup_fraction: 0.1                 # Phase 1: fraction of epochs with no pruning (score warmup)
+  ema_beta: 0.7                        # EMA decay for score smoothing (half-life ≈ 2 epochs)
+  fg_pixel_fraction: 0.003722          # Global foreground pixel fraction (from EDA)

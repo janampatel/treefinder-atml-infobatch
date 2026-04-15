@@ -107,3 +107,12 @@ output:
 logging:
   log_dir: "logs/"                     # Directory for logging
   log_interval: 100                     # Log training status every N batches
+
+# CS-IB (Class-Stratified InfoBatch) configuration
+infobatch:
+  enabled: true
+  prune_ratio: 0.5
+  delta: 0.875
+  warmup_fraction: 0.1
+  ema_beta: 0.7
+  fg_pixel_fraction: 0.003722
